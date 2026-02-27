@@ -2,26 +2,14 @@ import logging
 from typing import Dict, Any
 from langchain_core.messages import SystemMessage, AIMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
-
 from app.engine.state import AgentState
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-import os
-from dotenv import load_dotenv
-
 class RAGAgent:
-    """
-    Sub-agent dedicated to answering "How To" and policy questions 
-    by querying the internal documentation knowledge base.
-    """
     def __init__(self):
-        load_dotenv()
-        self.llm = ChatGoogleGenerativeAI(
-            model="gemini-flash-latest", 
-            temperature=0,
-            google_api_key=os.getenv("GOOGLE_API_KEY") 
-        )
+        self.llm = ChatGoogleGenerativeAI(model="gemini-flash-latest", temperature=0, google_api_key=settings.GEMINI_API_KEY)
         self.system_prompt = SystemMessage(content="""
         You are the Documentation Assistant. 
         Your job is to answer the user's question using ONLY the retrieved context. 
@@ -29,21 +17,10 @@ class RAGAgent:
         """)
         
     async def run(self, state: AgentState) -> Dict[str, Any]:
-        """
-        Executes standard RAG over the knowledge base.
-        """
         messages = state.get("messages", [])
-        
         logger.info("RAG Agent activated.")
-        
-        # In a real implementation we would:
-        # 1. Retrieve relevant chunks from the data/docs vector store based on the user_intent
-        # 2. Append chunks to the context
-        
         context_msg = SystemMessage(content="[Mock Context]: To handle a chargeback, navigate to the Resolution Center.")
-        
         response = await self.llm.ainvoke([self.system_prompt, context_msg] + list(messages))
-        
         return {"messages": [response]}
 
 rag_node = RAGAgent()

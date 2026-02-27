@@ -46,15 +46,11 @@ class ChatResponse(BaseModel):
 @app.post("/api/v1/chat", response_model=ChatResponse)
 async def chat_endpoint(request: ChatRequest):
     try:
-        initial_state = {
-            "messages": [HumanMessage(content=request.message)]
-        }
-        
+        initial_state = {"messages": [HumanMessage(content=request.message)]}
         final_state = await agent_graph.ainvoke(initial_state)
-        
         last_message = final_state["messages"][-1]
-        content = last_message.content if hasattr(last_message, "content") else str(last_message)
         
+        content = last_message.content if hasattr(last_message, "content") else str(last_message)
         retrieved_tools = [t["name"] for t in final_state.get("retrieved_tools", [])]
         domain = final_state.get("active_domain", "unknown")
         
@@ -63,9 +59,10 @@ async def chat_endpoint(request: ChatRequest):
             active_domain=domain,
             retrieved_tools=retrieved_tools
         )
-        
     except Exception as e:
-        logger.error(f"Error executing graph: {e}")
+        import traceback
+        error_trace = traceback.format_exc()
+        logger.error(f"Error executing graph: {e}\n{error_trace}")
         raise HTTPException(status_code=500, detail="Internal Server Error during execution.")
 
 @app.get("/health")

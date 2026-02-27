@@ -1,9 +1,7 @@
 from typing import Dict, Any, Literal
 import logging
-import os
-from dotenv import load_dotenv
 from pydantic import BaseModel, Field
-from langchain_core.messages import SystemMessage, BaseMessage
+from langchain_core.messages import SystemMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 from app.core.config import settings
@@ -13,9 +11,6 @@ from app.engine.routing.filters import ToolFilters
 logger = logging.getLogger(__name__)
 
 class SupervisorDecision(BaseModel):
-    """
-    The structured output expected from the Supervisor LLM.
-    """
     user_intent: str = Field(
         ..., 
         description="A concise summary of what the user is explicitly trying to achieve in this turn."
@@ -30,22 +25,9 @@ class SupervisorDecision(BaseModel):
     )
 
 class SupervisorAgent:
-    """
-    The Chief Orchestrator of the LangGraph.
-    It does NOT execute tools. It only analyzes the conversation history
-    and routes the state to the appropriate specialized sub-agent.
-    """
     def __init__(self):
-        load_dotenv()
-        self.llm = ChatGoogleGenerativeAI(
-            model="gemini-flash-latest", 
-            temperature=0,
-            google_api_key=os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
-        )
-        
-        # We bind the structured output schema to force the LLM to return strictly formatted routing data
+        self.llm = ChatGoogleGenerativeAI(model="gemini-flash-latest", temperature=0, google_api_key=settings.GEMINI_API_KEY)        
         self.structured_llm = self.llm.with_structured_output(SupervisorDecision)
-        
         self.system_prompt = SystemMessage(content='''
         You are the Chief Routing Supervisor for a highly scalable API Agentic System.
         
@@ -59,36 +41,22 @@ class SupervisorAgent:
         ''')
 
     async def run(self, state: AgentState) -> Dict[str, Any]:
-        """
-        The LangGraph node execution function.
-        """
         messages = state.get("messages", [])
-        if not messages:
-            logger.warning("Supervisor called with empty messages list. Routing to FINISH.")
-            return {"next_agent": "FINISH"}
-
         logger.info(f"Supervisor analyzing turn {len(messages)}")
-        
-        # Build prompt: System Prompt + History
         prompt = [self.system_prompt] + list(messages)
-        
-        # Invoke the LLM structure output asynchronously
         decision: SupervisorDecision = await self.structured_llm.ainvoke(prompt)
         
+        if not decision:
+            logger.error("Supervisor failed to produce a decision.")
+            return {"next_agent": "FINISH"}
+
         logger.info(f"Supervisor Decision: Intent='{decision.user_intent}' -> Route='{decision.next_agent}'")
-        
-        # Calculate domain filter purely using deterministic heuristics
         domain = ToolFilters.get_domain_from_intent(decision.user_intent)
-        
-        # We return the state updates. 
-        # Note: LangGraph will merge these dict keys into the global state.
         return {
             "user_intent": decision.user_intent,
             "next_agent": decision.next_agent,
             "active_domain": domain,
-            # We clear out any previous tool error since we are starting a new routing phase
             "tool_error": None 
         }
 
-# Singleton instance
 supervisor_node = SupervisorAgent()

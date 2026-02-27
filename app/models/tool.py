@@ -2,22 +2,12 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
 class ToolMetadata(BaseModel):
-    """
-    Strict schema for defining all tools in the system.
-    This enables precise filtering, deterministic grounding, and robust semantic routing.
-    """
     name: str = Field(..., description="The unique, programmatic name of the tool (e.g., 'paypal_create_invoice').")
     description: str = Field(..., description="A highly descriptive explanation of what the tool does. This is used for semantic search.")
     domain: str = Field(..., description="The broad domain the tool belongs to (e.g., 'payments', 'system', 'documentation').")
     tags: List[str] = Field(default_factory=list, description="Specific tags for hard filtering (e.g., ['finance', 'invoice', 'write']).")
-    input_schema: Dict[str, Any] = Field(
-        ..., 
-        description="The JSON Schema representation of the expected arguments for this tool."
-    )
-    embedding: Optional[List[float]] = Field(
-        default=None, 
-        description="The pre-computed vector embedding of the tool's description/name. Used for semantic retrieval."
-    )
+    input_schema: Dict[str, Any] = Field(..., description="The JSON Schema representation of the expected arguments for this tool.")
+    embedding: Optional[List[float]] = Field(default=None, description="The pre-computed vector embedding of the tool's description/name. Used for semantic retrieval.")
     
     class Config:
         json_schema_extra = {

@@ -7,7 +7,6 @@ from app.engine.routing.semantic_router import router
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Mock Dataset mimicking realistic user queries mapping to the TARGET tool they should retrieve
 EVAL_DATASET = [
     {
         "query": "I need to send out an invoice to customer abc@gmail for $150.",
@@ -32,29 +31,18 @@ EVAL_DATASET = [
 ]
 
 async def run_tool_selection_eval():
-    """
-    Evaluates the semantic router's ability to pull the required tool into the Top-K context.
-    This is what we use to claim "92% Accuracy" in interviews/production monitoring.
-    """
     logger.info(f"Starting Tool Selection Evaluation over {len(EVAL_DATASET)} test queries.")
-    
     total = len(EVAL_DATASET)
     successes = 0
-    k = 5 # How many tools we allow in the context window
+    k = 5
 
     for item in EVAL_DATASET:
         query = item["query"]
         target = item["expected_tool"]
         domain = item["domain_filter"]
         
-        # We run the actual semantic router against Pinecone
         try:
-            retrieved = await router.retrieve_tools_for_intent(
-                user_query=query, 
-                domain_filter=domain, 
-                k=k
-            )
-            
+            retrieved = await router.retrieve_tools_for_intent(user_query=query, domain_filter=domain, k=k)
             retrieved_names = [t["name"] for t in retrieved]
             
             if target in retrieved_names:

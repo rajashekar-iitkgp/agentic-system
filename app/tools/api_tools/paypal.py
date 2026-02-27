@@ -35,7 +35,6 @@ async def paypal_check_dispute_status(transaction_id: str = None, customer_id: s
         "details": "No open disputes found for the given identifiers."
     }
 
-# Mapping of tool names to their implementations
 PAYPAL_TOOL_MAP = {
     "paypal_create_invoice": paypal_create_invoice,
     "paypal_send_invoice": paypal_send_invoice,

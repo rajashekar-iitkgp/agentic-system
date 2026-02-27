@@ -9,13 +9,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 def generate_mock_paypal_tools() -> List[ToolMetadata]:
-    """
-    Generates a massive list of mock ToolMetadata objects representing a complex API 
-    surface like PayPal. This proves the system's ability to scale intent routing.
-    """
     tools = []
-    
-    # Core Invoice Tools
     tools.append(ToolMetadata(
         name="paypal_create_invoice",
         domain="payments",
