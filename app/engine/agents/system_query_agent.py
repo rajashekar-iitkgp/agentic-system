@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 class SystemQueryAgent:
     def __init__(self):
-        self.llm = ChatGoogleGenerativeAI(model="gemini-flash-latest", temperature=0, google_api_key=settings.GEMINI_API_KEY)
+        self.llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0, google_api_key=settings.GEMINI_API_KEY)
         self.system_prompt = SystemMessage(content="""
         You are the System Status Assistant.
         You have access to the system registry and metadata logs to answer user questions about their tool usage and system capabilities.

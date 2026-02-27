@@ -23,8 +23,15 @@ def test_chat(message: str, session_id: str = "test-session"):
         print(f"Failed to connect to server: {e}")
 
 if __name__ == "__main__":
-    # Wait a bit for server to start if we were running it in background
     print("Starting client test...")
     test_chat("I want to create an invoice for $50 for customer CUST-88")
+    
+    print("\n⏳ Sleeping for 20 seconds to respect API limits...")
+    time.sleep(20)
+    
     test_chat("What are my total sales for the last month?")
+    
+    print("\n⏳ Sleeping for 20 seconds to respect API limits...")
+    time.sleep(20)
+    
     test_chat("How do I handle a dispute?")

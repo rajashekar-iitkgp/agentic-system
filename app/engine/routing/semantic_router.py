@@ -10,6 +10,8 @@ from app.models.tool import ToolMetadata
 
 logger = logging.getLogger(__name__)
 
+from app.engine.routing.compressor import schema_compressor
+
 class SemanticRouter:
     def __init__(self):
         self.embeddings = GeminiEmbeddings(model_name="models/gemini-embedding-001")
@@ -28,9 +30,22 @@ class SemanticRouter:
             except:
                 schema_dict = {}
                 
-            retrieved_tools.append({"name": meta.get("name"), "description": meta.get("description"), "input_schema": schema_dict})
+            # TOKEN OPTIMIZATION: Compress before adding to state
+            compressed = schema_compressor.compress_tool_definition(
+                name=meta.get("name"),
+                description=meta.get("description", ""),
+                schema=schema_dict
+            )
+            
+            # Use original keys but compressed values for LLM stability
+            retrieved_tools.append({
+                "name": compressed["n"], 
+                "description": compressed["d"], 
+                "input_schema": compressed["s"]
+            })
             
         logger.info(f"Router selected {len(retrieved_tools)} tools.")
         return retrieved_tools
+
 
 router = SemanticRouter()

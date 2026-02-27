@@ -15,3 +15,5 @@ class AgentState(TypedDict):
     active_domain: Optional[str]
     retrieved_tools: Annotated[List[ActiveToolDict], lambda a, b: b]
     tool_error: Optional[str]
+    trace_id: str
+    request_metadata: Dict[str, Any]

@@ -7,4 +7,9 @@ langchain
 langchain-core
 langchain-google-genai
 langgraph
+langgraph-checkpoint-postgres
+psycopg[binary]
+psycopg-pool
+redis
 pinecone[grpc]
+httpx

@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 class RAGAgent:
     def __init__(self):
-        self.llm = ChatGoogleGenerativeAI(model="gemini-flash-latest", temperature=0, google_api_key=settings.GEMINI_API_KEY)
+        self.llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0, google_api_key=settings.GEMINI_API_KEY)
         self.system_prompt = SystemMessage(content="""
         You are the Documentation Assistant. 
         Your job is to answer the user's question using ONLY the retrieved context. 

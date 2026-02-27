@@ -26,7 +26,7 @@ class SupervisorDecision(BaseModel):
 
 class SupervisorAgent:
     def __init__(self):
-        self.llm = ChatGoogleGenerativeAI(model="gemini-flash-latest", temperature=0, google_api_key=settings.GEMINI_API_KEY)        
+        self.llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0, google_api_key=settings.GEMINI_API_KEY)        
         self.structured_llm = self.llm.with_structured_output(SupervisorDecision)
         self.system_prompt = SystemMessage(content='''
         You are the Chief Routing Supervisor for a highly scalable API Agentic System.
@@ -51,12 +51,16 @@ class SupervisorAgent:
             return {"next_agent": "FINISH"}
 
         logger.info(f"Supervisor Decision: Intent='{decision.user_intent}' -> Route='{decision.next_agent}'")
-        domain = ToolFilters.get_domain_from_intent(decision.user_intent)
+        
+        # We respect the domain set by the domain_router node if it exists
+        domain = state.get("active_domain", "payments")
+        
         return {
             "user_intent": decision.user_intent,
             "next_agent": decision.next_agent,
             "active_domain": domain,
             "tool_error": None 
         }
+
 
 supervisor_node = SupervisorAgent()

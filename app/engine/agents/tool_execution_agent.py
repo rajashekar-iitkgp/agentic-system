@@ -7,11 +7,13 @@ from langchain_core.tools import StructuredTool
 from app.core.config import settings
 from app.engine.state import AgentState
 
+from app.engine.execution.gateway import execution_gateway
+
 logger = logging.getLogger(__name__)
 
 class ToolExecutionAgent:
     def __init__(self, all_tool_implementations: Dict[str, Callable]):
-        self.llm = ChatGoogleGenerativeAI(model="gemini-flash-latest", temperature=0, google_api_key=settings.GEMINI_API_KEY)
+        self.llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0, google_api_key=settings.GEMINI_API_KEY)
         self.all_tool_implementations = all_tool_implementations
 
     async def run(self, state: AgentState) -> Dict[str, Any]:
@@ -19,12 +21,17 @@ class ToolExecutionAgent:
         retrieved_tools = state.get("retrieved_tools", [])
         logger.info(f"ToolExecutionAgent binding {len(retrieved_tools)} tools.")
         
+        # Mapping for validation
+        tool_schema_map = {}
         active_langchain_tools = []
         for t in retrieved_tools:
             tool_name = t["name"]
             if tool_name in self.all_tool_implementations:
                 func = self.all_tool_implementations[tool_name]
                 active_langchain_tools.append(func)
+                # If it's a StructuredTool, we can get the schema
+                if hasattr(func, "args_schema"):
+                    tool_schema_map[tool_name] = func.args_schema
             else:
                 logger.error(f"Implementation for tool {tool_name} not found!")
 
@@ -42,17 +49,25 @@ class ToolExecutionAgent:
                 tool_name = tool_call["name"]
                 args = tool_call["args"]
                 call_id = tool_call["id"]      
-                logger.info(f"Executing tool {tool_name} with args {args}")
                 
-                if tool_name in self.all_tool_implementations:
-                    try:
+                try:
+                    # VALIDATION GATEWAY
+                    schema = tool_schema_map.get(tool_name)
+                    execution_gateway.validate_tool_call(tool_name, args, schema, state)
+                    
+                    logger.info(f"Executing tool {tool_name} with args {args}")
+                    if tool_name in self.all_tool_implementations:
                         func = self.all_tool_implementations[tool_name]
                         result = await func(**args)
                         output_messages.append(ToolMessage(tool_call_id=call_id, content=str(result)))
-                    except Exception as e:
-                        logger.error(f"Error executing tool {tool_name}: {e}")
-                        output_messages.append(ToolMessage(tool_call_id=call_id, content=f"Error: {str(e)}"))
-                else:
-                    output_messages.append(ToolMessage(tool_call_id=call_id, content=f"Error: Tool '{tool_name}' implementation not found."))
+                    else:
+                        output_messages.append(ToolMessage(tool_call_id=call_id, content=f"Error: Tool '{tool_name}' implementation not found."))
+                
+                except ValueError as ve:
+                    logger.warning(f"Gateway Blocked Execution: {ve}")
+                    output_messages.append(ToolMessage(tool_call_id=call_id, content=f"Policy/Validation Error: {str(ve)}"))
+                except Exception as e:
+                    logger.error(f"Error executing tool {tool_name}: {e}")
+                    output_messages.append(ToolMessage(tool_call_id=call_id, content=f"Error: {str(e)}"))
 
         return {"messages": output_messages}

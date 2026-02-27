@@ -7,6 +7,12 @@ from typing import List, Dict, Any
 from langchain_core.messages import HumanMessage, AIMessage
 from app.core.config import settings
 from app.engine.graph import build_graph
+import traceback
+from app.tools.api_tools.paypal.auth_manager import paypal_auth
+
+import uuid
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -22,7 +28,21 @@ except Exception as e:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info(f"Starting {settings.PROJECT_NAME} in async mode.")
+    
+    try:
+        logger.info("Authenticating PayPal Developer credentials...")
+        await paypal_auth.get_access_token()
+        logger.info("PayPal authentication successful.")
+    except Exception as e:
+        logger.error(f"Failed to authenticate PayPal Developer credentials: {e}")
+        
+    if agent_graph._async_pool:
+        await agent_graph._async_pool.open()
+        logger.info("AsyncConnectionPool opened.")
     yield
+    if agent_graph._async_pool:
+        await agent_graph._async_pool.close()
+        logger.info("AsyncConnectionPool closed.")
     logger.info("Shutting down API.")
 
 app = FastAPI(title=settings.PROJECT_NAME, lifespan=lifespan)
@@ -43,11 +63,31 @@ class ChatResponse(BaseModel):
     active_domain: str
     retrieved_tools: List[str]
 
+class TracingMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        trace_id = request.headers.get("X-Trace-ID", str(uuid.uuid4()))
+        request.state.trace_id = trace_id
+        response = await call_next(request)
+        response.headers["X-Trace-ID"] = trace_id
+        return response
+        
+app.add_middleware(TracingMiddleware)
+
 @app.post("/api/v1/chat", response_model=ChatResponse)
-async def chat_endpoint(request: ChatRequest):
+async def chat_endpoint(request: ChatRequest, fastapi_request: Request):
     try:
-        initial_state = {"messages": [HumanMessage(content=request.message)]}
-        final_state = await agent_graph.ainvoke(initial_state)
+        trace_id = fastapi_request.state.trace_id
+        initial_state = {
+            "messages": [HumanMessage(content=request.message)],
+            "trace_id": trace_id,
+            "request_metadata": {
+                "session_id": request.session_id,
+                "role": "merchant"
+            }
+        }
+        
+        final_state = await agent_graph.ainvoke(initial_state, config={"configurable": {"thread_id": request.session_id}})
+
         last_message = final_state["messages"][-1]
         
         content = last_message.content if hasattr(last_message, "content") else str(last_message)
@@ -60,10 +100,9 @@ async def chat_endpoint(request: ChatRequest):
             retrieved_tools=retrieved_tools
         )
     except Exception as e:
-        import traceback
         error_trace = traceback.format_exc()
-        logger.error(f"Error executing graph: {e}\n{error_trace}")
-        raise HTTPException(status_code=500, detail="Internal Server Error during execution.")
+        logger.error(f"GRAPH ERROR: {e}\n{error_trace}")
+        raise HTTPException(status_code=500, detail=f"Graph Error: {str(e)}")
 
 @app.get("/health")
 async def health_check():
