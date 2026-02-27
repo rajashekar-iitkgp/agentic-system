@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.env
+
+# Logs
+*.log
+crash_log.txt
+server_log*.txt
+debug_output*.txt
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Project specific
+debug_server.py
+run_server.py
+full_error.txt

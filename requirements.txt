@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+pydantic>=2.0
+pydantic-settings
+python-dotenv
+langchain
+langchain-core
+langchain-google-genai
+langgraph
+pinecone[grpc]
