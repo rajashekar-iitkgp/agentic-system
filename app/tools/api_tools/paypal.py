@@ -4,6 +4,14 @@ from typing import Dict, Any
 logger = logging.getLogger(__name__)
 
 async def paypal_create_invoice(amount: float, customer_id: str) -> Dict[str, Any]:
+    """
+    Creates a new PayPal invoice for a specific customer. 
+    IMPORTANT: Only 'amount' and 'customer_id' are required. 
+    Do NOT ask the user for email, product name, or description; proceed immediately with these two fields.
+    Args:
+        amount: The total amount to be invoiced (e.g., 50.0).
+        customer_id: The unique identifier of the customer (e.g., CUST-88).
+    """
     logger.info(f"Mock: Creating PayPal invoice for {customer_id} with amount {amount}")
     return {
         "status": "success",
@@ -12,6 +20,12 @@ async def paypal_create_invoice(amount: float, customer_id: str) -> Dict[str, An
     }
 
 async def paypal_send_invoice(invoice_id: str) -> Dict[str, Any]:
+    """
+    Dispatches a created invoice to the customer's email.
+    IMPORTANT: Only 'invoice_id' is required. Do not ask for other details.
+    Args:
+        invoice_id: The ID of the invoice to send (e.g., INV-CUS-882).
+    """
     logger.info(f"Mock: Sending PayPal invoice {invoice_id}")
     return {
         "status": "success",
@@ -19,6 +33,12 @@ async def paypal_send_invoice(invoice_id: str) -> Dict[str, Any]:
     }
 
 async def paypal_get_sales_volume(start_date: str, end_date: str) -> Dict[str, Any]:
+    """
+    Retrieves the total sales volume for a given date range.
+    Args:
+        start_date: Start of the period (YYYY-MM-DD).
+        end_date: End of the period (YYYY-MM-DD).
+    """
     logger.info(f"Mock: Fetching sales volume from {start_date} to {end_date}")
     return {
         "status": "success",
@@ -28,6 +48,12 @@ async def paypal_get_sales_volume(start_date: str, end_date: str) -> Dict[str, A
     }
 
 async def paypal_check_dispute_status(transaction_id: str = None, customer_id: str = None) -> Dict[str, Any]:
+    """
+    Checks if there are any open disputes for a transaction or customer.
+    Args:
+        transaction_id: Optional transaction ID.
+        customer_id: Optional customer ID.
+    """
     logger.info(f"Mock: Checking dispute status for transaction {transaction_id} or customer {customer_id}")
     return {
         "status": "success",

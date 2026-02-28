@@ -1,7 +1,7 @@
 from typing import Dict, Any, List, Callable
 import logging
 from langchain_core.messages import SystemMessage, ToolMessage, AIMessage
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_openai import ChatOpenAI
 from langchain_core.tools import StructuredTool
 
 from app.core.config import settings
@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 class ToolExecutionAgent:
     def __init__(self, all_tool_implementations: Dict[str, Callable]):
-        self.llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0, google_api_key=settings.GEMINI_API_KEY)
+        self.llm = ChatOpenAI(model="gpt-4o", temperature=0, api_key=settings.OPENAI_API_KEY)
         self.all_tool_implementations = all_tool_implementations
 
     async def run(self, state: AgentState) -> Dict[str, Any]:
@@ -40,7 +40,11 @@ class ToolExecutionAgent:
         else:
             llm_with_tools = self.llm
             
-        system_prompt = SystemMessage(content="You are a helpful assistant executing actions. Use the provided tools to fulfill the user's request. If you need more information, ask the user.")
+        system_prompt = SystemMessage(content="""You are a strict action execution engine. 
+        Your goal is to execute tools immediately if you have the required parameters.
+        DO NOT ask for additional fields (like email, description, etc.) if they are not explicitly required by the tool's schema.
+        If the user's request can be fulfilled by a tool call with the available information, execute it NOW.
+        Only ask the user for information if a REQUIRED parameter in the tool schema is missing.""")
         response = await llm_with_tools.ainvoke([system_prompt] + list(messages))
         output_messages = [response]
         

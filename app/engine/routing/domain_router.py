@@ -1,7 +1,7 @@
 import re
 import logging
 from typing import Optional
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_openai import ChatOpenAI
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -18,7 +18,7 @@ class DomainRouter:
     }
 
     def __init__(self):
-        self.llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0, google_api_key=settings.GEMINI_API_KEY)
+        self.llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, api_key=settings.OPENAI_API_KEY)
 
     async def classify(self, query: str) -> str:
         for domain, patterns in self.KEYWORD_MAP.items():

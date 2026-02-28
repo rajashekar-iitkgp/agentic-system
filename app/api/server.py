@@ -8,11 +8,12 @@ from langchain_core.messages import HumanMessage, AIMessage
 from app.core.config import settings
 from app.engine.graph import build_graph
 import traceback
-from app.tools.api_tools.paypal.auth_manager import paypal_auth
+from app.tools.api_tools.auth_manager import paypal_auth
 
 import uuid
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
+from app.db.db_logger import save_response_to_db
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -94,6 +95,18 @@ async def chat_endpoint(request: ChatRequest, fastapi_request: Request):
         retrieved_tools = [t["name"] for t in final_state.get("retrieved_tools", [])]
         domain = final_state.get("active_domain", "unknown")
         
+        logger.info(f"Final response sent to user: {content[:100]}...")
+        
+        # Mirror response to PostgreSQL in the background
+        import asyncio
+        asyncio.create_task(save_response_to_db(
+            session_id=request.session_id,
+            user_query=request.message,
+            agent_response=content,
+            domain=domain,
+            tools=retrieved_tools
+        ))
+
         return ChatResponse(
             response=content,
             active_domain=domain,

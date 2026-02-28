@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     DEBUG: bool = False
 
     GEMINI_API_KEY: Optional[str] = None
+    OPENAI_API_KEY: Optional[str] = None
     LANGCHAIN_API_KEY: Optional[str] = None
     LANGCHAIN_TRACING_V2: bool = True
     LANGCHAIN_PROJECT: str = "scalable_agent_system"

@@ -1,16 +1,17 @@
 import logging
 import asyncio
 from typing import List
-from app.core.embeddings import GeminiEmbeddings
+from app.core.embeddings import ToolEmbeddings
 from app.core.config import settings
 from app.models.tool import ToolMetadata
 from app.db.vector.pinecone_client import pinecone_registry
+from app.db.vector.faiss_client import faiss_registry
 
 logger = logging.getLogger(__name__)
 
 class ToolRegistryManager:
     def __init__(self):
-        self.embeddings = GeminiEmbeddings(model_name="models/gemini-embedding-001")
+        self.embeddings = ToolEmbeddings()
 
     async def seed_tools(self, tools: List[ToolMetadata]):
         logger.info(f"Seeding {len(tools)} tools into the Vector Store.")
@@ -26,7 +27,9 @@ class ToolRegistryManager:
         for idx, tool in enumerate(tools):
             tool.embedding = embedded_vectors[idx]
             
-        await pinecone_registry.upsert_tools(tools)
-        logger.info("Successfully seeded tools.")
+        # Seed local HNSW (FAISS)
+        await faiss_registry.upsert_tools(tools)
+        # await pinecone_registry.upsert_tools(tools) # Disabled for OpenAI migration (requires new index)
+        logger.info("Successfully seeded tools into Pinecone and FAISS HNSW.")
 
 registry_manager = ToolRegistryManager()

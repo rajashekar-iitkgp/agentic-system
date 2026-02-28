@@ -2,7 +2,7 @@ from typing import Dict, Any, Literal
 import logging
 from pydantic import BaseModel, Field
 from langchain_core.messages import SystemMessage
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_openai import ChatOpenAI
 
 from app.core.config import settings
 from app.engine.state import AgentState
@@ -26,24 +26,40 @@ class SupervisorDecision(BaseModel):
 
 class SupervisorAgent:
     def __init__(self):
-        self.llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0, google_api_key=settings.GEMINI_API_KEY)        
+        self.llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, api_key=settings.OPENAI_API_KEY)        
         self.structured_llm = self.llm.with_structured_output(SupervisorDecision)
-        self.system_prompt = SystemMessage(content='''
-        You are the Chief Routing Supervisor for a highly scalable API Agentic System.
-        
-        Your job is to read the conversation history and determine WHERE to route the user's request next.
-        - Route to 'action_agent' if the user wants to PERFORM an action (e.g., send an invoice, create a payment, fetch a specific user record).
-        - Route to 'rag_agent' if the user is asking a "How to" question that requires reading documentation.
-        - Route to 'system_agent' if the user is asking about the system itself (e.g., "what tools do you have?" or "why did the last request fail?").
-        - Route to 'FINISH' if the user's request has been fully satisfied and a final response has been provided.
-        
-        Never attempt to answer the user directly. ALWAYS output the routing JSON.
-        ''')
+        self.system_prompt = SystemMessage(
+            content='''
+                You are the Chief Routing Supervisor for a highly scalable API Agentic System.
+            
+                Your job is to read the conversation history and determine WHERE to route the user's request next.
+                - Route to 'action_agent' if the user wants to PERFORM an action OR FETCH DATA (e.g., send an invoice, create a payment, fetch sales volume, check balance, or retrieve specific records).
+                - Route to 'rag_agent' ONLY if the user is asking a general "How to" question about policies or documentation (e.g., "How do I handle a dispute?").
+                - Route to 'system_agent' if the user is asking about the system itself (e.g., "what tools do you have?").
+                - Route to 'FINISH' if the user's request has been fully satisfied OR if the assistant has provided a response that requires the user to give more information.
+            
+                Never attempt to answer the user directly. ALWAYS output the routing JSON.
+            ''')
 
     async def run(self, state: AgentState) -> Dict[str, Any]:
         messages = state.get("messages", [])
-        logger.info(f"Supervisor analyzing turn {len(messages)}")
+        
         prompt = [self.system_prompt] + list(messages)
+        
+        # TOKEN OPTIMIZATION: If the last message is an assistant response WITHOUT tool calls, 
+        # it means the agent already replied to the user. We must FINISH.
+        if messages:
+            last_msg = messages[-1]
+            from langchain_core.messages import AIMessage
+            if isinstance(last_msg, AIMessage) and not (hasattr(last_msg, 'tool_calls') and last_msg.tool_calls):
+                logger.info("Shortcut: Assistant already replied. Routing to FINISH.")
+                return {
+                    "user_intent": state.get("user_intent", "continue"),
+                    "next_agent": "FINISH",
+                    "active_domain": state.get("active_domain", "payments"),
+                    "tool_error": None 
+                }
+
         decision: SupervisorDecision = await self.structured_llm.ainvoke(prompt)
         
         if not decision:

@@ -20,8 +20,8 @@ class ExecutionGateway:
     def __init__(self, rbac_rules: Optional[Dict[str, List[str]]] = None):
         self.rbac_rules = rbac_rules or {
             "admin": ["*"],
-            "merchant": ["payment", "invoice", "dispute", "reporting", "refund"],
-            "support": ["reporting", "dispute"]
+            "merchant": ["payment", "invoice", "dispute", "reporting", "refund", "sales", "volume"],
+            "support": ["reporting", "dispute", "sales", "volume"]
         }
 
 
