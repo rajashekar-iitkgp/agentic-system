@@ -4,7 +4,6 @@ A scalable, low-latency **agentic orchestration system** designed to handle **10
 
 ---
 ![alt text](<Screenshot (75).png>)
-![alt text](<Screenshot (75).png>)
 ## 🚀 Key Capabilities
 
 - ⚡ Hybrid semantic + keyword routing (high precision)
