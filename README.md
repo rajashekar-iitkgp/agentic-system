@@ -3,7 +3,7 @@
 A scalable, low-latency **agentic orchestration system** designed to handle **1000+ tools** with high precision using **Supervisor–Router–Executor architecture**, **Hybrid Retrieval (PGVector + BM25)**, and **parallel execution**.
 
 ---
-
+![alt text](<Screenshot (75).png>)
 ## 🚀 Key Capabilities
 
 - ⚡ Hybrid semantic + keyword routing (high precision)
@@ -30,6 +30,8 @@ graph TD
 ```
 
 ---
+
+Screenshot (75).png
 
 ## 🧩 Core Components
 
