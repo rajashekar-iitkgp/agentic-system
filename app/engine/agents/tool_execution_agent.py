@@ -17,19 +17,28 @@ class ToolExecutionAgent:
         self.all_tool_implementations = all_tool_implementations
 
     async def run(self, state: AgentState) -> Dict[str, Any]:
+        if state.get("openai_quota_error"):
+            logger.warning("OpenAI quota error flag detected. Skipping tool LLM execution.")
+            notice = AIMessage(
+                content=(
+                    "I identified the relevant tools for your request, but cannot execute them right now "
+                    "because the underlying LLM API quota has been exceeded. "
+                    "Please try again later or update the API billing/quota settings."
+                )
+            )
+            return {"messages": [notice]}
+
         messages = state.get("messages", [])
         retrieved_tools = state.get("retrieved_tools", [])
         logger.info(f"ToolExecutionAgent binding {len(retrieved_tools)} tools.")
-        
-        # Mapping for validation
+
         tool_schema_map = {}
-        active_langchain_tools = []
+        active_langchain_tools: List[Callable] = []
         for t in retrieved_tools:
             tool_name = t["name"]
             if tool_name in self.all_tool_implementations:
                 func = self.all_tool_implementations[tool_name]
                 active_langchain_tools.append(func)
-                # If it's a StructuredTool, we can get the schema
                 if hasattr(func, "args_schema"):
                     tool_schema_map[tool_name] = func.args_schema
             else:
@@ -40,22 +49,40 @@ class ToolExecutionAgent:
         else:
             llm_with_tools = self.llm
             
-        system_prompt = SystemMessage(content="""You are a strict action execution engine. 
-        Your goal is to execute tools immediately if you have the required parameters.
-        DO NOT ask for additional fields (like email, description, etc.) if they are not explicitly required by the tool's schema.
-        If the user's request can be fulfilled by a tool call with the available information, execute it NOW.
-        Only ask the user for information if a REQUIRED parameter in the tool schema is missing.""")
-        response = await llm_with_tools.ainvoke([system_prompt] + list(messages))
-        output_messages = [response]
+        system_prompt = SystemMessage(
+            content=(
+                "You are a strict action execution engine. Execute tools immediately when required "
+                "parameters are present. Do not request extra fields beyond the tool schema. "
+                "Ask the user only when a required parameter is missing."
+            )
+        )
         
-        if hasattr(response, "tool_calls") and response.tool_calls:
-            for tool_call in response.tool_calls:
+        current_messages = [system_prompt] + list(messages)
+        output_messages = []
+        MAX_ATTEMPTS = 2
+        
+        for attempt in range(MAX_ATTEMPTS):
+            response = await llm_with_tools.ainvoke(current_messages)
+            current_messages.append(response)
+            
+            if attempt == 0:
+                output_messages = [response]
+            else:
+                output_messages.append(response)
+                
+            if not hasattr(response, "tool_calls") or not response.tool_calls:
+                break
+                
+            all_tools_successful = True
+
+            import asyncio
+
+            async def execute_tool(tool_call):
                 tool_name = tool_call["name"]
                 args = tool_call["args"]
-                call_id = tool_call["id"]      
+                call_id = tool_call["id"]
                 
                 try:
-                    # VALIDATION GATEWAY
                     schema = tool_schema_map.get(tool_name)
                     execution_gateway.validate_tool_call(tool_name, args, schema, state)
                     
@@ -63,15 +90,31 @@ class ToolExecutionAgent:
                     if tool_name in self.all_tool_implementations:
                         func = self.all_tool_implementations[tool_name]
                         result = await func(**args)
-                        output_messages.append(ToolMessage(tool_call_id=call_id, content=str(result)))
+                        return ToolMessage(tool_call_id=call_id, content=str(result)), True
                     else:
-                        output_messages.append(ToolMessage(tool_call_id=call_id, content=f"Error: Tool '{tool_name}' implementation not found."))
+                        return ToolMessage(tool_call_id=call_id, content=f"Error: Tool '{tool_name}' implementation not found."), False
                 
                 except ValueError as ve:
                     logger.warning(f"Gateway Blocked Execution: {ve}")
-                    output_messages.append(ToolMessage(tool_call_id=call_id, content=f"Policy/Validation Error: {str(ve)}"))
+                    return ToolMessage(tool_call_id=call_id, content=str(ve)), False
                 except Exception as e:
                     logger.error(f"Error executing tool {tool_name}: {e}")
-                    output_messages.append(ToolMessage(tool_call_id=call_id, content=f"Error: {str(e)}"))
+                    return ToolMessage(tool_call_id=call_id, content=f"Error: {str(e)}"), False
+
+            tool_tasks = [execute_tool(t) for t in response.tool_calls]
+            execution_results = await asyncio.gather(*tool_tasks)
+            
+            for tool_msg, success in execution_results:
+                current_messages.append(tool_msg)
+                output_messages.append(tool_msg)
+                if not success:
+                    all_tools_successful = False
+            
+            if all_tools_successful:
+                break
+
+        if output_messages and isinstance(output_messages[-1], ToolMessage) and "Error" in str(output_messages[-1].content):
+            final_abort_msg = AIMessage(content=f"Tool execution failed: {output_messages[-1].content}")
+            output_messages.append(final_abort_msg)
 
         return {"messages": output_messages}

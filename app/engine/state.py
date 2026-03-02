@@ -11,9 +11,11 @@ class ActiveToolDict(TypedDict):
 class AgentState(TypedDict):
     messages: Annotated[Sequence[BaseMessage], add_messages]
     next_agent: Optional[str]
-    user_intent: Optional[str]
+    user_intents: List[str]
     active_domain: Optional[str]
     retrieved_tools: Annotated[List[ActiveToolDict], lambda a, b: b]
     tool_error: Optional[str]
+    requires_reseed: Optional[bool]
     trace_id: str
     request_metadata: Dict[str, Any]
+    openai_quota_error: Optional[bool]

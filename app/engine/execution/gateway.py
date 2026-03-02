@@ -51,10 +51,17 @@ class ExecutionGateway:
                 tool_schema(**args)
             logger.info(f"Schema validated for tool {tool_name}")
         except ValidationError as e:
-            logger.error(f"Schema validation failed for tool {tool_name}: {e}")
-            raise ValueError(f"Invalid Arguments for {tool_name}: {str(e)}")
+            error_details = []
+            for error in e.errors():
+                loc = " -> ".join(str(l) for l in error['loc'])
+                msg = error['msg']
+                error_details.append(f"Param '{loc}': {msg}")
+            
+            detailed_msg = " | ".join(error_details)
+            logger.error(f"Schema validation failed for tool {tool_name}: {detailed_msg}")
+            raise ValueError(f"Invalid Arguments for '{tool_name}': {detailed_msg}. Please correct these and try again.")
 
-        logger.info(f"Audit: User={user_role}, Tool={tool_name}, TraceID={state.get('trace_id')}, Params={args}")
+        logger.info(f"Audit: User={user_role}, Tool={tool_name}, TraceID={state.get('trace_id')}")
         
         return True
 

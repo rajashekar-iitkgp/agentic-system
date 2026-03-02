@@ -49,7 +49,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title=settings.PROJECT_NAME, lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:3000", "http://localhost:8000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -74,26 +74,64 @@ class TracingMiddleware(BaseHTTPMiddleware):
         
 app.add_middleware(TracingMiddleware)
 
+
+def _infer_domain_from_text(text: str) -> str:
+    lowered = (text or "").lower()
+    if any(w in lowered for w in ["dispute", "chargeback", "case"]):
+        return "disputes"
+    if any(w in lowered for w in ["sales", "volume", "report", "revenue"]):
+        return "reporting"
+    return "payments"
+
 @app.post("/api/v1/chat", response_model=ChatResponse)
 async def chat_endpoint(request: ChatRequest, fastapi_request: Request):
     try:
         trace_id = fastapi_request.state.trace_id
+        inferred_domain = _infer_domain_from_text(request.message)
         initial_state = {
             "messages": [HumanMessage(content=request.message)],
             "trace_id": trace_id,
             "request_metadata": {
                 "session_id": request.session_id,
                 "role": "merchant"
-            }
+            },
+            "user_intents": ["process request"],
+            "active_domain": inferred_domain,
+            "retrieved_tools": [],
+            "next_agent": "supervisor",
+            "requires_reseed": False,
+            "tool_error": None
         }
         
         final_state = await agent_graph.ainvoke(initial_state, config={"configurable": {"thread_id": request.session_id}})
-
+        
         last_message = final_state["messages"][-1]
         
         content = last_message.content if hasattr(last_message, "content") else str(last_message)
-        retrieved_tools = [t["name"] for t in final_state.get("retrieved_tools", [])]
         domain = final_state.get("active_domain", "unknown")
+
+        retrieved_tools_state = final_state.get("retrieved_tools", [])
+        if not retrieved_tools_state:
+            try:
+                from app.engine.routing.semantic_router import router
+                retrieved_tools_state = await router.retrieve_tools_for_intent(
+                    request.message,
+                    domain_filter=domain if domain and domain != "unknown" else "payments",
+                    k=3,
+                )
+            except Exception as e:
+                logger.error(f"Fallback semantic routing failed: {e}")
+                retrieved_tools_state = []
+
+        retrieved_tools = [t["name"] for t in retrieved_tools_state]
+
+        if final_state.get("openai_quota_error"):
+            quota_msg = (
+                "The system identified the relevant tools for your request, "
+                "but cannot complete the operation right now because the OpenAI API quota "
+                "for this environment has been exceeded. Please try again later or update the API quota."
+            )
+            content = quota_msg
         
         logger.info(f"Final response sent to user: {content[:100]}...")
         

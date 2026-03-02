@@ -26,12 +26,4 @@ if __name__ == "__main__":
     print("Starting client test...")
     test_chat("I want to create an invoice for $50 for customer CUST-88")
     
-    print("\n⏳ Sleeping for 20 seconds to respect API limits...")
-    time.sleep(20)
-    
-    test_chat("What are my total sales for the last month?")
-    
-    print("\n⏳ Sleeping for 20 seconds to respect API limits...")
-    time.sleep(20)
-    
-    test_chat("How do I handle a dispute?")
+   

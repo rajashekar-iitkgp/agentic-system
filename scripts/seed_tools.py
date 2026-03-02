@@ -11,10 +11,10 @@ import os
 
 async def seed():
     # Clear old index to prevent "ghost" tools from prior runs
-    for f in ["data/hnsw_index.faiss", "data/tool_metadata.pkl"]:
-        if os.path.exists(f):
-            os.remove(f)
-            logger.info(f"Deleted old index file: {f}")
+    # for f in ["data/hnsw_index.faiss", "data/tool_metadata.pkl"]:
+    #     if os.path.exists(f):
+    #         os.remove(f)
+    #         logger.info(f"Deleted old index file: {f}")
             
     tools_to_seed = []
     

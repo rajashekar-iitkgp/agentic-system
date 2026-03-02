@@ -1,4 +1,4 @@
-from typing import Dict, Any, Literal
+from typing import Dict, Any, Literal, List
 import logging
 from pydantic import BaseModel, Field
 from langchain_core.messages import SystemMessage
@@ -11,9 +11,9 @@ from app.engine.routing.filters import ToolFilters
 logger = logging.getLogger(__name__)
 
 class SupervisorDecision(BaseModel):
-    user_intent: str = Field(
+    user_intents: List[str] = Field(
         ..., 
-        description="A concise summary of what the user is explicitly trying to achieve in this turn."
+        description="A list of distinct sub-queries or actions broken down from the user's message. For complex multi-step requests, list each step as a separate string. For simple requests, return a list of one string."
     )
     next_agent: Literal["action_agent", "rag_agent", "system_agent", "FINISH"] = Field(
         ...,
@@ -23,6 +23,35 @@ class SupervisorDecision(BaseModel):
         default=False,
         description="True if the user's intent is too ambiguous to proceed without asking a clarifying question."
     )
+
+def _infer_domain_from_messages(messages) -> str:
+    try:
+        from langchain_core.messages import HumanMessage
+    except Exception:
+        HumanMessage = None
+
+    latest_text = ""
+    if messages:
+        for m in reversed(messages):
+            if HumanMessage is not None and isinstance(m, HumanMessage):
+                content = getattr(m, "content", None)
+                if isinstance(content, str):
+                    latest_text = content
+                    break
+            else:
+                content = getattr(m, "content", None)
+                if isinstance(content, str):
+                    latest_text = content
+                    break
+
+    text = latest_text.lower()
+
+    if any(w in text for w in ["dispute", "chargeback", "case"]):
+        return "disputes"
+    if any(w in text for w in ["sales", "volume", "report", "revenue"]):
+        return "reporting"
+    return "payments"
+
 
 class SupervisorAgent:
     def __init__(self):
@@ -43,38 +72,65 @@ class SupervisorAgent:
 
     async def run(self, state: AgentState) -> Dict[str, Any]:
         messages = state.get("messages", [])
-        
+        inferred_domain = _infer_domain_from_messages(messages)
+
         prompt = [self.system_prompt] + list(messages)
         
-        # TOKEN OPTIMIZATION: If the last message is an assistant response WITHOUT tool calls, 
-        # it means the agent already replied to the user. We must FINISH.
         if messages:
             last_msg = messages[-1]
-            from langchain_core.messages import AIMessage
-            if isinstance(last_msg, AIMessage) and not (hasattr(last_msg, 'tool_calls') and last_msg.tool_calls):
+            from langchain_core.messages import AIMessage, ToolMessage
+
+            if isinstance(last_msg, AIMessage) and not (hasattr(last_msg, "tool_calls") and last_msg.tool_calls):
                 logger.info("Shortcut: Assistant already replied. Routing to FINISH.")
                 return {
-                    "user_intent": state.get("user_intent", "continue"),
+                    "user_intents": state.get("user_intents", ["continue"]),
                     "next_agent": "FINISH",
-                    "active_domain": state.get("active_domain", "payments"),
-                    "tool_error": None 
+                    "active_domain": inferred_domain or "payments",
+                    "tool_error": None,
                 }
 
-        decision: SupervisorDecision = await self.structured_llm.ainvoke(prompt)
-        
-        if not decision:
-            logger.error("Supervisor failed to produce a decision.")
-            return {"next_agent": "FINISH"}
+            if isinstance(last_msg, ToolMessage):
+                logger.info("Tool execution finished. Routing to FINISH.")
+                return {
+                    "user_intents": state.get("user_intents", ["continue"]),
+                    "next_agent": "FINISH",
+                    "active_domain": inferred_domain or "payments",
+                    "tool_error": None,
+                }
 
-        logger.info(f"Supervisor Decision: Intent='{decision.user_intent}' -> Route='{decision.next_agent}'")
+        try:
+            decision: SupervisorDecision = await self.structured_llm.ainvoke(prompt)
+            if not decision.user_intents:
+                 decision.user_intents = state.get("user_intents") or [" "]
+        except Exception as e:
+            logger.error(f"Supervisor LLM failed: {e}. Falling back to state intent.")
+            err_str = str(e)
+
+            fallback = {
+                "user_intents": state.get("user_intents") or [" "],
+                "active_domain": inferred_domain or "payments",
+                "tool_error": None
+            }
+            
+            if "insufficient_quota" in err_str or "You exceeded your current quota" in err_str:
+                logger.warning("Detected OpenAI insufficient_quota error in Supervisor. "
+                               "Routing to action_agent with openai_quota_error flag.")
+                fallback.update({
+                    "next_agent": "action_agent",
+                    "openai_quota_error": True
+                })
+            else:
+                fallback.update({
+                    "next_agent": "FINISH"
+                })
+            return fallback
         
-        # We respect the domain set by the domain_router node if it exists
-        domain = state.get("active_domain", "payments")
+        logger.info(f"Supervisor Decision: Intents='{decision.user_intents}' -> Route='{decision.next_agent}'")
         
         return {
-            "user_intent": decision.user_intent,
+            "user_intents": decision.user_intents,
             "next_agent": decision.next_agent,
-            "active_domain": domain,
+            "active_domain": inferred_domain or "payments",
             "tool_error": None 
         }
 
