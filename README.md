@@ -33,11 +33,11 @@ graph TD
 
 ## 🧩 Core Components
 
-### 1. Supervisor Agent
+### 1. Supervisor Agent (Gemini)
 - Decomposes user query into `multi-intents`
 - Infers domain (`payments`, `disputes`, `reporting`)
-- Prevents infinite loops (ReAct guardrails)
-- Routes execution path deterministically
+- Prevents infinite loops (shortcuts + iteration caps)
+- Routes execution path deterministically using `gemini-flash-latest` with structured output
 
 ---
 
@@ -53,7 +53,7 @@ graph TD
 ### 3. Action Agent
 - Executes tool calls via `asyncio.gather`
 - Handles multi-intent workflows in parallel
-- Uses strict tool-calling prompts (no hallucination)
+- Uses Gemini (`gemini-flash-latest`) bound to LangChain tools with a strict tool-calling prompt (no direct answers when tools are available)
 
 ---
 
@@ -151,18 +151,21 @@ score_gap < threshold
 ## 🧠 State Management
 
 ### Agent State
-- `messages`
-- `user_intents`
-- `active_domain`
-- `retrieved_tools`
-- `trace_id`
+- `messages` — full LangChain message history
+- `user_intents` — decomposed intents from the supervisor
+- `active_domain` — inferred domain (`payments`, `disputes`, `reporting`)
+- `retrieved_tools` — active tools (name, description, compressed schema)
+- `trace_id` — per-request trace ID
+- `steps` / `step_results` — optional DAG + per-step outputs for multi-hop flows
+- `iteration_count` / `max_iterations` — explicit loop bounds
+- `openai_quota_error` — generic LLM quota / rate-limit flag (historical name)
 
 ---
 
 ### Orchestration
-- Graph-based execution (Supervisor → Router → Action)
-- Loop prevention built-in
-- Stateless API (horizontal scalability)
+- Graph-based execution (Supervisor → Router → Action → Supervisor)
+- Loop prevention via shortcuts **and** iteration caps
+- Stateless HTTP API (horizontal scalability), state lives in LangGraph threads
 
 ---
 
@@ -193,10 +196,27 @@ score_gap < threshold
 
 ### 1. Environment Variables
 
+Minimal `.env` for this project:
+
 ```bash
-OPENAI_API_KEY=your_key_here
-DATABASE_URL=postgresql://postgres:postgres@db:5432/agent_db
-REDIS_URL=redis://redis:6379/0
+# Gemini (LLM + Embeddings)
+GEMINI_API_KEY="your_gemini_api_key"
+
+# Postgres (PGVector)
+DATABASE_URL="postgresql://postgres:postgres@127.0.0.1:5433/agent_db"
+
+# Redis
+REDIS_URL="redis://127.0.0.1:6379/0"
+
+# LangSmith (optional)
+LANGCHAIN_TRACING_V2="true"
+LANGCHAIN_API_KEY="your_langsmith_key"
+LANGCHAIN_PROJECT="scalable_agent_system"
+
+# PayPal (sandbox)
+PAYPAL_CLIENT_ID="your_client_id"
+PAYPAL_CLIENT_SECRET="your_client_secret"
+PAYPAL_MODE="sandbox"
 ```
 
 ---

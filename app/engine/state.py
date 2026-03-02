@@ -8,7 +8,21 @@ class ActiveToolDict(TypedDict):
     description: str
     input_schema: Dict[str, Any]
 
-class AgentState(TypedDict):
+
+class StepResult(TypedDict, total=False):
+    step_id: str
+    status: str  # "pending" | "success" | "failed"
+    tool_name: Optional[str]
+    output: Optional[Dict[str, Any]]
+    error: Optional[str]
+
+
+class CompAction(TypedDict, total=False):
+    tool_name: str
+    args: Dict[str, Any]
+
+
+class AgentState(TypedDict, total=False):
     messages: Annotated[Sequence[BaseMessage], add_messages]
     next_agent: Optional[str]
     user_intents: List[str]
@@ -19,3 +33,13 @@ class AgentState(TypedDict):
     trace_id: str
     request_metadata: Dict[str, Any]
     openai_quota_error: Optional[bool]
+
+    # v2 orchestration fields (all optional for backward compatibility)
+    steps: List[Dict[str, Any]]
+    step_results: Dict[str, StepResult]
+    completed_steps: List[str]
+    pending_compensation: List[CompAction]
+    clarification_pending: bool
+    confidence_scores: Dict[str, float]
+    iteration_count: int
+    max_iterations: int

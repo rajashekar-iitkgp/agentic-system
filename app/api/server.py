@@ -83,6 +83,25 @@ def _infer_domain_from_text(text: str) -> str:
         return "reporting"
     return "payments"
 
+
+def _coerce_message_content_to_text(content: Any) -> str:
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    # Gemini/LangChain can return structured content parts like:
+    # [{'type': 'text', 'text': '...'}, ...]
+    if isinstance(content, list):
+        parts: List[str] = []
+        for p in content:
+            if isinstance(p, dict) and isinstance(p.get("text"), str):
+                parts.append(p["text"])
+            elif isinstance(p, str):
+                parts.append(p)
+        if parts:
+            return "\n".join(parts)
+    return str(content)
+
 @app.post("/api/v1/chat", response_model=ChatResponse)
 async def chat_endpoint(request: ChatRequest, fastapi_request: Request):
     try:
@@ -95,7 +114,7 @@ async def chat_endpoint(request: ChatRequest, fastapi_request: Request):
                 "session_id": request.session_id,
                 "role": "merchant"
             },
-            "user_intents": ["process request"],
+            "user_intents": [request.message],
             "active_domain": inferred_domain,
             "retrieved_tools": [],
             "next_agent": "supervisor",
@@ -103,11 +122,18 @@ async def chat_endpoint(request: ChatRequest, fastapi_request: Request):
             "tool_error": None
         }
         
-        final_state = await agent_graph.ainvoke(initial_state, config={"configurable": {"thread_id": request.session_id}})
+        # Use a per-request thread_id so each HTTP call runs in an isolated graph
+        # thread, avoiding cross-request shortcut behavior from previous runs.
+        thread_id = f"{request.session_id}:{trace_id}"
+        final_state = await agent_graph.ainvoke(
+            initial_state,
+            config={"configurable": {"thread_id": thread_id}},
+        )
         
         last_message = final_state["messages"][-1]
         
-        content = last_message.content if hasattr(last_message, "content") else str(last_message)
+        raw_content = last_message.content if hasattr(last_message, "content") else str(last_message)
+        content = _coerce_message_content_to_text(raw_content)
         domain = final_state.get("active_domain", "unknown")
 
         retrieved_tools_state = final_state.get("retrieved_tools", [])
@@ -128,8 +154,9 @@ async def chat_endpoint(request: ChatRequest, fastapi_request: Request):
         if final_state.get("openai_quota_error"):
             quota_msg = (
                 "The system identified the relevant tools for your request, "
-                "but cannot complete the operation right now because the OpenAI API quota "
-                "for this environment has been exceeded. Please try again later or update the API quota."
+                "but cannot complete the operation right now because the underlying LLM API quota "
+                "or rate limit for this environment has been exceeded. "
+                "Please try again later or update the API quota."
             )
             content = quota_msg
         

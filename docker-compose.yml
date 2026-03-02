@@ -26,9 +26,12 @@ services:
     container_name: agent_app
     restart: always
     ports:
-      - "8000:8000"
+      - "8001:8000"
     env_file:
       - .env
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5433/agent_db
+      REDIS_URL: redis://redis:6379/0
     depends_on:
       - db
       - redis

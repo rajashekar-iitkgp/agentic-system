@@ -61,9 +61,36 @@ async def paypal_check_dispute_status(transaction_id: str = None, customer_id: s
         "details": "No open disputes found for the given identifiers."
     }
 
+
+async def paypal_get_shipping_address(order_id: str) -> Dict[str, Any]:
+    """
+    Retrieves the shipping address for a given PayPal order.
+
+    This is a mocked helper for testing the agentic system. It does not call the real
+    PayPal API but returns a representative shipping address payload so that we can
+    validate tool selection, RBAC, and execution.
+
+    Args:
+        order_id: The PayPal order ID (e.g., 1DA59471B5379105V).
+    """
+    logger.info(f"Mock: Fetching shipping address for PayPal order {order_id}")
+    return {
+        "status": "success",
+        "order_id": order_id,
+        "shipping_address": {
+            "full_name": "FooBuyer Jones",
+            "address_line_1": "1 Main St",
+            "city": "San Jose",
+            "state": "CA",
+            "postal_code": "95131",
+            "country_code": "US",
+        },
+    }
+
 PAYPAL_TOOL_MAP = {
     "paypal_create_invoice": paypal_create_invoice,
     "paypal_send_invoice": paypal_send_invoice,
     "paypal_get_sales_volume": paypal_get_sales_volume,
-    "paypal_check_dispute_status": paypal_check_dispute_status
+    "paypal_check_dispute_status": paypal_check_dispute_status,
+    "paypal_get_shipping_address": paypal_get_shipping_address,
 }

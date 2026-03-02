@@ -1,7 +1,7 @@
 from typing import Dict, Any, List, Callable
 import logging
 from langchain_core.messages import SystemMessage, ToolMessage, AIMessage
-from langchain_openai import ChatOpenAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.tools import StructuredTool
 
 from app.core.config import settings
@@ -13,16 +13,20 @@ logger = logging.getLogger(__name__)
 
 class ToolExecutionAgent:
     def __init__(self, all_tool_implementations: Dict[str, Callable]):
-        self.llm = ChatOpenAI(model="gpt-4o", temperature=0, api_key=settings.OPENAI_API_KEY)
+        self.llm = ChatGoogleGenerativeAI(
+            model="gemini-flash-latest",
+            temperature=0,
+            google_api_key=settings.GEMINI_API_KEY,
+        )
         self.all_tool_implementations = all_tool_implementations
 
     async def run(self, state: AgentState) -> Dict[str, Any]:
         if state.get("openai_quota_error"):
-            logger.warning("OpenAI quota error flag detected. Skipping tool LLM execution.")
+            logger.warning("LLM quota/rate-limit flag detected. Skipping tool LLM execution.")
             notice = AIMessage(
                 content=(
                     "I identified the relevant tools for your request, but cannot execute them right now "
-                    "because the underlying LLM API quota has been exceeded. "
+                    "because the underlying LLM API quota or rate limit has been exceeded. "
                     "Please try again later or update the API billing/quota settings."
                 )
             )
@@ -49,17 +53,20 @@ class ToolExecutionAgent:
         else:
             llm_with_tools = self.llm
             
-        system_prompt = SystemMessage(
-            content=(
-                "You are a strict action execution engine. Execute tools immediately when required "
-                "parameters are present. Do not request extra fields beyond the tool schema. "
-                "Ask the user only when a required parameter is missing."
-            )
+        must_use_tools = bool(retrieved_tools)
+        system_prompt_text = (
+            "You are a strict action execution engine. "
+            "If any tools are available, you MUST respond using tool calls only and NEVER answer directly. "
+            "Execute tools immediately when required parameters are present. "
+            "Do not request extra fields beyond the tool schema. "
+            "Ask the user only when a required parameter is missing."
         )
+        system_prompt = SystemMessage(content=system_prompt_text)
         
         current_messages = [system_prompt] + list(messages)
         output_messages = []
         MAX_ATTEMPTS = 2
+        step_results = state.get("step_results", {})
         
         for attempt in range(MAX_ATTEMPTS):
             response = await llm_with_tools.ainvoke(current_messages)
@@ -90,15 +97,38 @@ class ToolExecutionAgent:
                     if tool_name in self.all_tool_implementations:
                         func = self.all_tool_implementations[tool_name]
                         result = await func(**args)
+                        # Record a simple step result keyed by tool_call id to support
+                        # downstream multi-step reasoning without changing existing flows.
+                        step_results[call_id] = {
+                            "step_id": call_id,
+                            "status": "success",
+                            "tool_name": tool_name,
+                            "output": {"raw": str(result)},
+                            "error": None,
+                        }
                         return ToolMessage(tool_call_id=call_id, content=str(result)), True
                     else:
                         return ToolMessage(tool_call_id=call_id, content=f"Error: Tool '{tool_name}' implementation not found."), False
                 
                 except ValueError as ve:
                     logger.warning(f"Gateway Blocked Execution: {ve}")
+                    step_results[call_id] = {
+                        "step_id": call_id,
+                        "status": "failed",
+                        "tool_name": tool_name,
+                        "output": None,
+                        "error": str(ve),
+                    }
                     return ToolMessage(tool_call_id=call_id, content=str(ve)), False
                 except Exception as e:
                     logger.error(f"Error executing tool {tool_name}: {e}")
+                    step_results[call_id] = {
+                        "step_id": call_id,
+                        "status": "failed",
+                        "tool_name": tool_name,
+                        "output": None,
+                        "error": str(e),
+                    }
                     return ToolMessage(tool_call_id=call_id, content=f"Error: {str(e)}"), False
 
             tool_tasks = [execute_tool(t) for t in response.tool_calls]
@@ -117,4 +147,4 @@ class ToolExecutionAgent:
             final_abort_msg = AIMessage(content=f"Tool execution failed: {output_messages[-1].content}")
             output_messages.append(final_abort_msg)
 
-        return {"messages": output_messages}
+        return {"messages": output_messages, "step_results": step_results}

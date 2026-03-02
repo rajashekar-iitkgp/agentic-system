@@ -3,7 +3,7 @@ import json
 import time
 
 def test_chat(message: str, session_id: str = "test-session"):
-    url = "http://127.0.0.1:8000/api/v1/chat"
+    url = "http://127.0.0.1:8001/api/v1/chat"
     payload = {
         "message": message,
         "session_id": session_id
@@ -24,6 +24,4 @@ def test_chat(message: str, session_id: str = "test-session"):
 
 if __name__ == "__main__":
     print("Starting client test...")
-    test_chat("I want to create an invoice for $50 for customer CUST-88")
-    
-   
+    test_chat("What is the shipping address for order 1DA59471B5379105V?")

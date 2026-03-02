@@ -3,7 +3,7 @@ from typing import List, Dict, Any, Optional
 import os
 from pydantic import BaseModel, Field
 from app.core.embeddings import ToolEmbeddings
-from langchain_openai import ChatOpenAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 from app.core.config import settings
 from app.db.vector.pg_client import pg_registry
 # from app.db.vector.faiss_client import faiss_registry
@@ -21,33 +21,65 @@ class RankerSelection(BaseModel):
 class SemanticRouter:
     def __init__(self):
         self.embeddings = ToolEmbeddings()
-        self.ranker_llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, api_key=settings.OPENAI_API_KEY)
+        self.ranker_llm = ChatGoogleGenerativeAI(
+            model="gemini-flash-latest",
+            temperature=0,
+            google_api_key=settings.GEMINI_API_KEY,
+        )
         self.structured_ranker = self.ranker_llm.with_structured_output(RankerSelection)
 
     async def retrieve_tools_for_intent(self, user_query: str, domain_filter: Optional[str] = None, k: int = 5) -> List[Dict[str, Any]]:
         logger.info(f"Two-Stage routing for query: '{user_query}'")
-        
-        # Broad Hybrid Retrieval (Recall) 
+
+        # --- Stage 1: Hybrid retrieval (semantic + keyword) with quota-safe fallback ---
+        quota_exhausted = False
+
         try:
-            query_vector = await self.embeddings.aembed_query(user_query)
-            # Retrieve more candidates (20) for the re-ranker to choose from
+            try:
+                query_vector = await self.embeddings.aembed_query(user_query)
+            except Exception as embed_err:
+                msg = str(embed_err).lower()
+                logger.error(f"Embedding generation failed: {embed_err}")
+                if (
+                    "insufficient_quota" in msg
+                    or "you exceeded your current quota" in msg
+                    or "429" in msg
+                    or "quota" in msg
+                    or "rate limit" in msg
+                    or "resource_exhausted" in msg
+                ):
+                    # When LLM quota is exhausted, fall back to pure keyword search by
+                    # passing an empty embedding into the SQL layer.
+                    logger.warning("Embedding quota exhausted. Falling back to keyword-only hybrid search.")
+                    quota_exhausted = True
+                    query_vector = []
+                else:
+                    # Non-quota errors should still surface.
+                    raise
+
+            # If the embedding layer itself returned an empty vector (our quota-safe behavior),
+            # treat this as an exhausted semantic signal and rely purely on SQL keyword search.
+            if not query_vector:
+                quota_exhausted = True
+
             candidates = await pg_registry.hybrid_search(
                 query=user_query,
                 query_embedding=query_vector,
-                top_k=20, 
-                domain_filter=domain_filter
+                top_k=20,
+                domain_filter=domain_filter,
             )
             logger.info(f"Stage 1: Retrieved {len(candidates)} candidates.")
         except Exception as e:
-            logger.error(f"Stage 1 search failed: {e}")
-            raise
+            logger.error(f"Stage 1 hybrid search failed: {e}")
+            return []
 
         if not candidates:
             return []
 
-        # Conditional Re-Ranking (The "Smart Approach") 
-        # Threshold 0.005 represents a solid gap in RRF scores (e.g. 5+ rank positions).
-        use_llm_ranker = True
+        # --- Stage 2: Conditional re-ranking ---
+        # If we know quota is exhausted for embeddings, skip the LLM ranker as well and
+        # trust the hybrid SQL scores to avoid further failures.
+        use_llm_ranker = not quota_exhausted
         if len(candidates) > 1:
             top_score = candidates[0].get("score", 0)
             second_score = candidates[1].get("score", 0)
@@ -69,11 +101,17 @@ class SemanticRouter:
         
         retrieved_tools = []
         for tool_meta in selected_tools:
-            import ast
-            try:
-                schema_dict = ast.literal_eval(tool_meta.get("input_schema", "{}"))
-            except:
+            import json
+            raw_schema = tool_meta.get("input_schema")
+            if raw_schema is None or raw_schema in ("null", ""):
                 schema_dict = {}
+            elif isinstance(raw_schema, dict):
+                schema_dict = raw_schema
+            else:
+                try:
+                    schema_dict = json.loads(raw_schema) if isinstance(raw_schema, str) else {}
+                except Exception:
+                    schema_dict = {}
                 
             compressed = schema_compressor.compress_tool_definition(
                 name=tool_meta.get("name"),

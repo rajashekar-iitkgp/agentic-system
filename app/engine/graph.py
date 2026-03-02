@@ -25,13 +25,15 @@ def build_graph(all_tool_implementations: Dict[str, Callable]) -> Any:
 
     async def supervisor(state: AgentState):
         result = await supervisor_node.run(state)
+        # Merge supervisor output back into state, preserving orchestration fields where present.
         return {
+            **state,
             **result,
-            "tool_error": state.get("tool_error"),
-            "requires_reseed": state.get("requires_reseed"),
+            "tool_error": result.get("tool_error", state.get("tool_error")),
+            "requires_reseed": result.get("requires_reseed", state.get("requires_reseed")),
             "trace_id": state.get("trace_id"),
             "request_metadata": state.get("request_metadata"),
-            "active_domain": state.get("active_domain")
+            "active_domain": result.get("active_domain", state.get("active_domain")),
         }
         
     async def router_node(state: AgentState):
@@ -39,8 +41,8 @@ def build_graph(all_tool_implementations: Dict[str, Callable]) -> Any:
         if not intents:
             legacy_intent = state.get("user_intent")
             intents = [legacy_intent] if legacy_intent else [""]
-            
-        tasks = [router.retrieve_tools_for_intent(intent, domain_filter=None, k=3) for intent in intents]
+        active_domain = state.get("active_domain") or "payments"
+        tasks = [router.retrieve_tools_for_intent(intent, domain_filter=active_domain, k=3) for intent in intents]
         results = await asyncio.gather(*tasks)
         
         all_tools = []  

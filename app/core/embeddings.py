@@ -4,17 +4,17 @@ import hashlib
 import json
 import redis
 from typing import List, Optional
-from langchain_openai import OpenAIEmbeddings
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-class ToolEmbeddings(OpenAIEmbeddings):
-    def __init__(self, model: str = "text-embedding-3-small"):
-        super().__init__(
-            model=model,
-            api_key=settings.OPENAI_API_KEY
-        )
+EMBEDDING_DIM = 1536
+
+
+class ToolEmbeddings(GoogleGenerativeAIEmbeddings):
+    def __init__(self, model: str = "gemini-embedding-001"):
+        super().__init__(model=model, google_api_key=settings.GEMINI_API_KEY)
         try:
             r = redis.from_url(settings.REDIS_URL, decode_responses=True)
             r.ping()
@@ -31,7 +31,7 @@ class ToolEmbeddings(OpenAIEmbeddings):
     async def aembed_query(self, text: str) -> List[float]:
         r_client = getattr(self, 'redis_client', None)
         if not r_client:
-            return await super().aembed_query(text)
+            return await super().aembed_query(text, output_dimensionality=EMBEDDING_DIM)
 
         cache_key = self._get_query_hash(text)
         try:
@@ -44,12 +44,13 @@ class ToolEmbeddings(OpenAIEmbeddings):
 
         # Cache MISS: call OpenAI
         try:
-            embedding = await super().aembed_query(text)
+            embedding = await super().aembed_query(text, output_dimensionality=EMBEDDING_DIM)
         except Exception as e:
-            if "insufficient_quota" in str(e).lower():
-                logger.error("--- OPENAI QUOTA EXCEEDED ---")
-                logger.error("Please refill your OpenAI credits. System will continue but new embeddings won't be cached.")
-                return [] # Return empty to handle gracefully
+            msg = str(e).lower()
+            if any(s in msg for s in ["insufficient_quota", "quota", "resource_exhausted", "429"]):
+                logger.error("--- GEMINI QUOTA EXCEEDED ---")
+                logger.error("System will continue with keyword-only retrieval where possible.")
+                return []
             raise
         
         # Save to Redis with 7-day TTL (604800 seconds) 
@@ -64,7 +65,7 @@ class ToolEmbeddings(OpenAIEmbeddings):
     async def aembed_documents(self, texts: List[str]) -> List[List[float]]:
         r_client = getattr(self, 'redis_client', None)
         if not r_client:
-            return await super().aembed_documents(texts)
+            return await super().aembed_documents(texts, output_dimensionality=EMBEDDING_DIM)
 
         results = [None] * len(texts)
         missing_indices = []
@@ -87,7 +88,7 @@ class ToolEmbeddings(OpenAIEmbeddings):
             logger.info(f"Embedding Cache: {len(missing_indices)}/{len(texts)} MISSES.")
             missing_texts = [texts[i] for i in missing_indices]
             try:
-                new_embeddings = await super().aembed_documents(missing_texts)
+                new_embeddings = await super().aembed_documents(missing_texts, output_dimensionality=EMBEDDING_DIM)
                 
                 # Save results and update cache
                 for i, (idx, embedding) in enumerate(zip(missing_indices, new_embeddings)):
@@ -98,11 +99,11 @@ class ToolEmbeddings(OpenAIEmbeddings):
                     except Exception as e:
                         logger.error(f"Redis cache error during batch write: {e}")
             except Exception as e:
-                if "insufficient_quota" in str(e).lower():
-                    logger.error("--- OPENAI QUOTA EXCEEDED (BATCH) ---")
-                    # Fill missing with zeros if blocked
+                msg = str(e).lower()
+                if any(s in msg for s in ["insufficient_quota", "quota", "resource_exhausted", "429"]):
+                    logger.error("--- GEMINI QUOTA EXCEEDED (BATCH) ---")
                     for idx in missing_indices:
-                        results[idx] = [0.0] * self.index.ntotal if hasattr(self, 'index') else [0.0] * 1536
+                        results[idx] = [0.0] * EMBEDDING_DIM
                 else:
                     raise
 

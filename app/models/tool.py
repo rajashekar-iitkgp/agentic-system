@@ -8,6 +8,10 @@ class ToolMetadata(BaseModel):
     tags: List[str] = Field(default_factory=list, description="Specific tags for hard filtering (e.g., ['finance', 'invoice', 'write']).")
     input_schema: Dict[str, Any] = Field(..., description="The JSON Schema representation of the expected arguments for this tool.")
     embedding: Optional[List[float]] = Field(default=None, description="The pre-computed vector embedding of the tool's description/name. Used for semantic retrieval.")
+    compensating_tool: Optional[str] = Field(
+        default=None,
+        description="Optional name of a compensating (rollback) tool to call if workflows involving this tool fail.",
+    )
     
     class Config:
         json_schema_extra = {

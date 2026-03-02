@@ -20,7 +20,9 @@ class ExecutionGateway:
     def __init__(self, rbac_rules: Optional[Dict[str, List[str]]] = None):
         self.rbac_rules = rbac_rules or {
             "admin": ["*"],
-            "merchant": ["payment", "invoice", "dispute", "reporting", "refund", "sales", "volume"],
+            # Merchant can call all payment/invoice/dispute/reporting tools plus read-only helpers
+            # like sales/volume and shipping address lookups.
+            "merchant": ["payment", "invoice", "dispute", "reporting", "refund", "sales", "volume", "shipping"],
             "support": ["reporting", "dispute", "sales", "volume"]
         }
 
