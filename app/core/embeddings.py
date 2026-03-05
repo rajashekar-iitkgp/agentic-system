@@ -83,7 +83,7 @@ class ToolEmbeddings(GoogleGenerativeAIEmbeddings):
                 logger.error(f"Redis cache error: {e}")
                 missing_indices.append(idx)
 
-        # Batch call OpenAI for missing embeddings
+        # Batch call gemini for missing embeddings
         if missing_indices:
             logger.info(f"Embedding Cache: {len(missing_indices)}/{len(texts)} MISSES.")
             missing_texts = [texts[i] for i in missing_indices]

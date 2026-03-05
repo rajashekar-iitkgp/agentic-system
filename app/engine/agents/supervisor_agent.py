@@ -13,15 +13,8 @@ logger = logging.getLogger(__name__)
 class StepSpec(BaseModel):
     id: str = Field(..., description="Stable identifier for this logical step (e.g., 'step_1').")
     description: str = Field(..., description="Natural-language description of what this step should accomplish.")
-    required_tool: Optional[str] = Field(
-        default=None,
-        description="If known, the primary tool name expected to execute this step.",
-    )
-    depends_on: List[str] = Field(
-        default_factory=list,
-        description="IDs of prerequisite steps whose results this step depends on.",
-    )
-
+    required_tool: Optional[str] = Field(default=None,description="If known, the primary tool name expected to execute this step.",)
+    depends_on: List[str] = Field(default_factory=list,description="IDs of prerequisite steps whose results this step depends on.",)
 
 class SupervisorDecision(BaseModel):
     user_intents: List[str] = Field(
@@ -87,11 +80,7 @@ def _infer_domain_from_messages(messages) -> str:
 
 class SupervisorAgent:
     def __init__(self):
-        self.llm = ChatGoogleGenerativeAI(
-            model="gemini-flash-latest",
-            temperature=0,
-            google_api_key=settings.GEMINI_API_KEY,
-        )
+        self.llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash",temperature=0,google_api_key=settings.GEMINI_API_KEY)
         self.structured_llm = self.llm.with_structured_output(SupervisorDecision)
         self.system_prompt = SystemMessage(
             content='''
@@ -109,7 +98,6 @@ class SupervisorAgent:
     async def run(self, state: AgentState) -> Dict[str, Any]:
         messages = state.get("messages", [])
         inferred_domain = _infer_domain_from_messages(messages)
-
         prompt = [self.system_prompt] + list(messages)
         
         if messages:
@@ -141,26 +129,12 @@ class SupervisorAgent:
         except Exception as e:
             logger.error(f"Supervisor LLM failed: {e}. Falling back to state intent.")
             err_str = str(e).lower()
-
-            fallback = {
-                "user_intents": state.get("user_intents") or [" "],
-                "active_domain": inferred_domain or "payments",
-                "tool_error": None,
-            }
-
+            fallback = {"user_intents": state.get("user_intents") or [" "],"active_domain": inferred_domain or "payments","tool_error": None}
             # Treat clear quota / rate-limit signals from the LLM provider as a quota exhaustion
             # flag so downstream agents can avoid additional LLM calls and return a clear message.
             if any(s in err_str for s in ["insufficient_quota", "quota", "rate limit", "resource_exhausted", "429"]):
-                logger.warning(
-                    "Detected LLM quota/rate-limit error in Supervisor. "
-                    "Routing to action_agent with openai_quota_error flag."
-                )
-                fallback.update(
-                    {
-                        "next_agent": "action_agent",
-                        "openai_quota_error": True,
-                    }
-                )
+                logger.warning("Detected LLM quota/rate-limit error in Supervisor. Routing to action_agent with openai_quota_error flag.")
+                fallback.update({"next_agent": "action_agent","openai_quota_error": True})
             else:
                 fallback.update({"next_agent": "FINISH"})
             return fallback

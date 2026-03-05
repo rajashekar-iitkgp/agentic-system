@@ -17,9 +17,7 @@ if sys.platform == "win32":
         pass
 
 async def save_response_to_db(session_id: str, user_query: str, agent_response: str, domain: str = None, tools: list = None):
-    """
-    Saves the final AI response to the PostgreSQL database in the background.
-    """
+    
     def _candidate_db_urls(db_url: str):
         urls = [db_url]
         try:

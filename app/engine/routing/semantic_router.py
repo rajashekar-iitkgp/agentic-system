@@ -21,11 +21,7 @@ class RankerSelection(BaseModel):
 class SemanticRouter:
     def __init__(self):
         self.embeddings = ToolEmbeddings()
-        self.ranker_llm = ChatGoogleGenerativeAI(
-            model="gemini-flash-latest",
-            temperature=0,
-            google_api_key=settings.GEMINI_API_KEY,
-        )
+        self.ranker_llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash",temperature=0,google_api_key=settings.GEMINI_API_KEY,)
         self.structured_ranker = self.ranker_llm.with_structured_output(RankerSelection)
 
     async def retrieve_tools_for_intent(self, user_query: str, domain_filter: Optional[str] = None, k: int = 5) -> List[Dict[str, Any]]:
@@ -40,34 +36,18 @@ class SemanticRouter:
             except Exception as embed_err:
                 msg = str(embed_err).lower()
                 logger.error(f"Embedding generation failed: {embed_err}")
-                if (
-                    "insufficient_quota" in msg
-                    or "you exceeded your current quota" in msg
-                    or "429" in msg
-                    or "quota" in msg
-                    or "rate limit" in msg
-                    or "resource_exhausted" in msg
-                ):
-                    # When LLM quota is exhausted, fall back to pure keyword search by
-                    # passing an empty embedding into the SQL layer.
+                if ("insufficient_quota" in msg or "you exceeded your current quota" in msg or "429" in msg or "quota" in msg or "rate limit" in msg or "resource_exhausted" in msg):
                     logger.warning("Embedding quota exhausted. Falling back to keyword-only hybrid search.")
                     quota_exhausted = True
                     query_vector = []
-                else:
-                    # Non-quota errors should still surface.
+                else: 
                     raise
 
             # If the embedding layer itself returned an empty vector (our quota-safe behavior),
-            # treat this as an exhausted semantic signal and rely purely on SQL keyword search.
             if not query_vector:
                 quota_exhausted = True
 
-            candidates = await pg_registry.hybrid_search(
-                query=user_query,
-                query_embedding=query_vector,
-                top_k=20,
-                domain_filter=domain_filter,
-            )
+            candidates = await pg_registry.hybrid_search(query=user_query,query_embedding=query_vector,top_k=20,domain_filter=domain_filter,)
             logger.info(f"Stage 1: Retrieved {len(candidates)} candidates.")
         except Exception as e:
             logger.error(f"Stage 1 hybrid search failed: {e}")

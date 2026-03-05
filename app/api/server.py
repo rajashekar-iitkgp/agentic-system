@@ -89,8 +89,6 @@ def _coerce_message_content_to_text(content: Any) -> str:
         return ""
     if isinstance(content, str):
         return content
-    # Gemini/LangChain can return structured content parts like:
-    # [{'type': 'text', 'text': '...'}, ...]
     if isinstance(content, list):
         parts: List[str] = []
         for p in content:
