@@ -98,9 +98,19 @@ def build_graph(all_tool_implementations: Dict[str, Callable]) -> Any:
         if not tools:
             logger.info("No tools found for intent. Returning 'not found' message.")
             return "tool_not_found"
-        return "action_agent"
+        
+        original_decision = state.get("next_agent", "action_agent")
+        return original_decision
 
-    workflow.add_conditional_edges("semantic_router", route_after_search, {"action_agent": "action_agent", "tool_not_found": "tool_not_found"})
+    workflow.add_conditional_edges(
+        "semantic_router", 
+        route_after_search, 
+        {
+            "action_agent": "action_agent", 
+            "system_agent": "system_agent",
+            "tool_not_found": "tool_not_found"
+        }
+    )
     workflow.add_edge("tool_not_found", END)
     workflow.add_edge("action_agent", "supervisor")
     workflow.add_edge("rag_agent", "supervisor")

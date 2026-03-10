@@ -21,7 +21,7 @@ class RankerSelection(BaseModel):
 class SemanticRouter:
     def __init__(self):
         self.embeddings = ToolEmbeddings()
-        self.ranker_llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash",temperature=0,google_api_key=settings.GEMINI_API_KEY,)
+        self.ranker_llm = ChatGoogleGenerativeAI(model=settings.GENAI_MODEL,temperature=0,google_api_key=settings.GEMINI_API_KEY,)
         self.structured_ranker = self.ranker_llm.with_structured_output(RankerSelection)
 
     async def retrieve_tools_for_intent(self, user_query: str, domain_filter: Optional[str] = None, k: int = 5) -> List[Dict[str, Any]]:

@@ -80,7 +80,7 @@ def _infer_domain_from_messages(messages) -> str:
 
 class SupervisorAgent:
     def __init__(self):
-        self.llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash",temperature=0,google_api_key=settings.GEMINI_API_KEY)
+        self.llm = ChatGoogleGenerativeAI(model=settings.GENAI_MODEL,temperature=0,google_api_key=settings.GEMINI_API_KEY)
         self.structured_llm = self.llm.with_structured_output(SupervisorDecision)
         self.system_prompt = SystemMessage(
             content='''

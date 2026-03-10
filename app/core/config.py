@@ -24,6 +24,8 @@ class Settings(BaseSettings):
     PAYPAL_CLIENT_SECRET: Optional[str] = None
     PAYPAL_MODE: str = "sandbox"  # sandbox or live
 
+    GENAI_MODEL: str = "gemini-flash-latest"
+
 
     model_config = SettingsConfigDict(
         env_file=".env", 
